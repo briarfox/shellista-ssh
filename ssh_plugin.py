@@ -6,8 +6,7 @@ import ssh
 
 alias=[]
 
-def main(line):
+def main(self,line):
     ssh.SSH().cmdloop()
     
-if __name__=='__main__':
-    main('')
+
