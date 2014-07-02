@@ -19,7 +19,6 @@ def edit_file(file_to_edit):
     '''Open file in a temp text page to allow editing'''
     
     cur_path = editor.get_path()
-    print cur_path
     #with open('tmp.txt', 'w') as file:
     try:
         file = open(os.path.dirname(__file__)+'/tmp.txt','w')
@@ -44,9 +43,7 @@ def edit_file(file_to_edit):
         return False
 
             
-def edit_host():
-    '''Edits the host shortcut file.'''
-    pass
+
     
 if __name__=='__main__':
     print 'testing'

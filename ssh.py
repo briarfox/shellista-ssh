@@ -4,6 +4,7 @@ import getpass
 import os
 import sys
 import ui
+import modules.Keys as Keys
 import traceback
 import StringIO
 from tempfile import TemporaryFile
@@ -13,7 +14,7 @@ import re
 
 HOME = os.path.expanduser('~/Documents')
 DIR = os.path.expanduser('~/Documents/.ssh')
-KEY = 'id_scp_key'
+KEY = 'id_ssh_key'
 key_mode = {'RSA': 'rsa',
             'DSA': 'dss'}
 
@@ -24,6 +25,7 @@ def _parse_host(host):
 class SSH(cmd.Cmd):
     "SSH class for sshlista"
     def __init__(self):
+        check_key()
         cmd.Cmd.__init__(self)
         self.sshlista_path = os.path.dirname(os.path.realpath(__file__))
         self.connected = False
@@ -62,7 +64,7 @@ class SSH(cmd.Cmd):
                 path =  self.client.pwd[2:]
             else:
                 path = self.client.pwd
-            print path
+        
             result = self.client.execute('cd '+path+self.os_sign[self.operating_system] +line)
             for line in result:
                 print line
@@ -74,40 +76,86 @@ class SSH(cmd.Cmd):
 
 #handle editing from remote
     def do_edit(self, line):
+        '''
+        edit:
+            Opens a remote file in pythonista's editor. When the console is reopened, save confimation will be requested.
+            usage:
+                edit path/on/remote
+        '''
         if self.connected:
-            args = line.split(' ')
-            if len(args) > 1:
+            try:
+                args = line.split(' ')
+                if len(args) > 1:
+                    return
+                buff = TemporaryFile()
+                self.client.getfo(args[0], buff)
+                buff.seek(0)
+                result = edit_file(buff)
+                if result:
+                    self.client.putfo(result,args[0])
+            except:
+                print 'No file found at given path'
                 return
-            print args[0]
-            buff = TemporaryFile()
-            self.client.getfo(args[0], buff)
-            buff.seek(0)
-            result = edit_file(buff)
-            if result:
-                self.client.putfo(result,args[0])
             
             
         else:
             return
+    def do_nano(self,line):
+        '''
+        nano:
+            Opens a remote file in pythonista's editor. When the console is reopened, save confimation will be requested.
+            usage:
+                edit path/on/remote  
+        '''
+        self.do_edit(line)
+            
+    def do_editkey(self,line):
+        '''
+        editkey - Opens up the ssh key in the editor.
+            usage:
+                editkey [public/private]
+        '''
+        args = line.split(' ')
+        if len(args) >1:
+            return
+        if args[0] == 'public':
+            result = edit_file(open(DIR+'/id_ssh_key.pub.txt','r'))
+            if result:
+                open(DIR+'id_ssh_key.pub.txt','w').write(result.read())
+        elif args[0] == 'private':
+            result = edit_file(open(DIR+'/id_ssh_key.txt','r'))
+            if result:
+                open(DIR+'id_ssh_key.txt','w').write(result.read())
+        else:
+            return
         
     def do_scp(self,line):
+        '''
+        scp - secure copy
+        scp copy_from copy_to
+        
+        host: designates remote location
+        $Home - when used in local path, directory will be from pythonista Documents instead of local path
+        
+            usage:
+                scp host:projects/folder local/project
+                scp $HOME/projects/folder host:remote/dir
+                scp local/project/test.py host:remote/project/test.py
+        '''
         args = line.split(' ')
         if args[0]=='' or len(args) >2:
             return
         mode = ''
         if 'host:' in args[0]:
-            print 'mode GET'
             args[0] = args[0][5:]
             mode = 'GET'
         elif 'host:' in args[1]:
-            print 'mode PUT'
             args[1] = args[1][5:]
             mode = 'PUT'
         else:
             print '*Invalid Usage*'
             return
             
-        print 'Global mode is '+mode
         if mode == 'GET':
             if self.client.isdir(args[0]):
                 #check for $HOME
@@ -116,7 +164,6 @@ class SSH(cmd.Cmd):
                     os.chdir(os.path.expanduser('~/Documents'))
                     args[1] = args[1][6:]
                 path = args[0].split('/')
-                print path[:-1]
                 dir = path[len(path)-1]
                 self.client.chdir(args[0])
                 self.client.get_r('.',args[1])
@@ -134,7 +181,6 @@ class SSH(cmd.Cmd):
                     cur_dir = os.getcwd()
                     os.chdir(os.path.expanduser('~/Documents'))
                     args[0] = args[0][6:]
-                    print args[0]
             if os.path.isdir(args[0]):
                 try:
                     import traceback
@@ -157,7 +203,7 @@ class SSH(cmd.Cmd):
         '''
 connect:
 usage: 
-    connect saved_name
+    connect shortcut
     connect user@host
 '''
         args = line.split(' ')
@@ -171,7 +217,6 @@ usage:
             if '@' in args[0]:
                 self.user, self.host = _parse_host(args[0])
                 #args[0] = args[0].split(':')[1]
-                print self.user, self.host
             else:
                 print '**Invalid Usage**'
                 return
@@ -180,9 +225,6 @@ usage:
             return
         
         pkey = DIR+'/'+KEY+'.txt'
-        print pkey
-        print self.user
-        print self.host
 
         try:
             self.client = pysftp.Connection(self.host,username=self.user,private_key=pkey)
@@ -191,8 +233,8 @@ usage:
             self.prompt = self.user+'@'+self.host+'>'
         except:
             try: 
-                passwd = getpass.getpass('password: ')
-                self.client = pysftp.Connection(self.host,username=self.user,private_key=pkey, private_key_pass=passwd)
+                self.passwd = getpass.getpass('password: ')
+                self.client = pysftp.Connection(self.host,username=self.user,private_key=pkey, private_key_pass=self.passwd)
                 print 'Key authenticated. Connected as %s on %s' % (self.user, self.host)
                 self.connected = True
                 self.prompt = self.user+'@'+self.host+'>'
@@ -244,8 +286,23 @@ usage:
         self.do_cd(line)
         
     def do_exit(self, line):
-        "Exit"
         return True
+    def do_close(self,line):
+        return self.do_exit(line)
+        
+        
+def check_key():
+    if not os.path.isdir(DIR):
+        os.mkdir(DIR)
+    if not os.path.isfile(DIR+'/'+KEY+'.txt'):
+        print '*Keypair not found - generating key pair*'
+        typ = raw_input('Key Type [RSA/DSA]: ')
+        passwd = raw_input('RSA/DSA password [Blank for no password]: ')
+        if passwd == '':
+            passwd = None
+        Keys.keygen(KEY, passwd,typ=typ)
+        print 'Keypair has been generated'
+        return
             
 
             

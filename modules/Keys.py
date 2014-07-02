@@ -2,6 +2,8 @@ import os
 
 DIR = os.path.expanduser('~/Documents/.ssh')
 FILENAME = 'id_ssh_key'
+key_mode = {'RSA': 'rsa',
+            'DSA': 'dss'}
 
 #Keygen for keypair
 def keygen(filename, password=None,typ='RSA', bits=1024):

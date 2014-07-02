@@ -519,10 +519,7 @@ class Connection(object):
         # restore local directory
         os.chdir(cur_local_dir)
         #check if remote directory exists if not create it
-        print(remotepath)
         rpath = remotepath.split('/')
-        print('rpath is:')
-        print(rpath)
         cur_remote_dir = self.pwd
         for i in range(len(rpath)):
             if not self.exists(rpath[i]):

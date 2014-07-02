@@ -1,10 +1,5 @@
 '''
-ssh:
-    usage:
-        editkey [private/public] - opens key files for editing
-        keygen - Generates a new ssh key pair
-        edithost - edit shortcuts to host names
-        connect [-p port] user@host.com
+ssh: open ssh shell.
 '''
 
 import ssh
