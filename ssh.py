@@ -3,9 +3,7 @@ import cmd
 import getpass
 import os
 import sys
-import ui
 import modules.Keys as Keys
-import traceback
 import StringIO
 import modules.shortcuts as shortcuts
 from tempfile import TemporaryFile
