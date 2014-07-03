@@ -8,10 +8,12 @@ import editor
 
 
 #TEMP = os.path.abspath(os.path.split(sys.argv[0])[0])
+
 TEMP = os.path.relpath(os.path.realpath(os.path.dirname(__file__)),os.path.expanduser('~/Documents'))+'/tmp.txt'
 
-CUR_PATH = os.path.relpath(os.path.realpath(os.path.dirname(sys.argv[0])),os.path.expanduser('~/Documents'))
-
+shellista = sys.modules['__main__']
+shellista_dir = os.path.abspath(os.path.dirname(shellista.__file__))
+TEMP_DIR = os.path.join(shellista_dir,'plugins','extensions','ssh','modules')
 
 
 
@@ -21,7 +23,7 @@ def edit_file(file_to_edit):
     cur_path = editor.get_path()
     #with open('tmp.txt', 'w') as file:
     try:
-        file = open(os.path.dirname(__file__)+'/tmp.txt','w')
+        file = open(TEMP_DIR+'/tmp.txt','w')
         file.write(file_to_edit.read())
         file.close()
         editor.reload_files()
@@ -32,7 +34,7 @@ def edit_file(file_to_edit):
             input = raw_input('Save Changes? Y,N: ')
             if input=='Y' or input=='y':
                 editor.open_file(cur_path)
-                return open(os.path.dirname(__file__)+'/tmp.txt','r')
+                return open(TEMP_DIR+'/tmp.txt','r')
             elif input=='N' or input=='n':
                 editor.open_file(cur_path)
                 return False

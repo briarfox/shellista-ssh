@@ -1,4 +1,6 @@
 import os
+import paramiko
+import patchparamiko
 
 DIR = os.path.expanduser('~/Documents/.ssh')
 FILENAME = 'id_ssh_key'
@@ -7,8 +9,7 @@ key_mode = {'RSA': 'rsa',
 
 #Keygen for keypair
 def keygen(filename, password=None,typ='RSA', bits=1024):
-    import paramiko
-    import modules.patchparamiko
+    
     try:
         if typ == 'RSA':
             k = paramiko.RSAKey.generate(bits)
