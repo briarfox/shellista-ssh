@@ -3,19 +3,16 @@ from __future__ import print_function
 
 import os
 from contextlib import contextmanager
-import ntpath
-import posixpath
 import socket
 from stat import S_IMODE, S_ISDIR, S_ISREG
 import tempfile
-import warnings
 
 import paramiko
 from paramiko import SSHException              # make available
 from paramiko import AuthenticationException   # make available
 from paramiko import AgentKey
 
-__version__ = "0.2.9"
+__version__ = "0.2.8"
 # pylint: disable = R0913
 
 
@@ -45,7 +42,6 @@ class ConnectionException(Exception):
         Exception.__init__(self, host, port)
         self.message = 'Could not connect to host:port.  %s:%s'
 
-
 class CredentialException(Exception):
     """Exception raised for credential problems
 
@@ -58,102 +54,39 @@ class CredentialException(Exception):
         Exception.__init__(self, message)
         self.message = message
 
-
 class WTCallbacks(object):
-    '''an object to house the callbacks, used internally'''
+    '''an object to house the callbacks, used internally
+
+    :ivar flist: list of files currently traversed
+    :ivar dlist: list of directories currently traversed
+    :ivar ulist: list of unknown entities currently traversed
+    '''
     def __init__(self):
         '''set instance vars'''
-        self._flist = []
-        self._dlist = []
-        self._ulist = []
+        self.flist = []
+        self.dlist = []
+        self.ulist = []
 
     def file_cb(self, pathname):
         '''called for regular files, appends pathname to .flist
 
         :param str pathname: file path
         '''
-        self._flist.append(pathname)
+        self.flist.append(pathname)
 
     def dir_cb(self, pathname):
         '''called for directories, appends pathname to .dlist
 
         :param str pathname: directory path
         '''
-        self._dlist.append(pathname)
+        self.dlist.append(pathname)
 
     def unk_cb(self, pathname):
         '''called for unknown file types, appends pathname to .ulist
 
         :param str pathname: unknown entity path
         '''
-        self._ulist.append(pathname)
-
-    @property
-    def flist(self):
-        '''return a sorted list of files currently traversed
-
-        :getter: returns the list
-        :setter: sets the list
-        :type: list
-        '''
-        return sorted(self._flist)
-
-    @flist.setter
-    def flist(self, val):
-        '''setter for _flist '''
-        self._flist = val
-
-    @property
-    def dlist(self):
-        '''return a sorted list of directories currently traversed
-
-        :getter: returns the list
-        :setter: sets the list
-        :type: list
-        '''
-        return sorted(self._dlist)
-
-    @dlist.setter
-    def dlist(self, val):
-        '''setter for _dlist '''
-        self._dlist = val
-
-    @property
-    def ulist(self):
-        '''return a sorted list of unknown entities currently traversed
-
-        :getter: returns the list
-        :setter: sets the list
-        :type: list
-        '''
-        return sorted(self._ulist)
-
-    @ulist.setter
-    def ulist(self, val):
-        '''setter for _ulist '''
-        self._ulist = val
-
-
-class CnOpts(object):
-    '''additional connection options beyond authentication
-
-    :ivar bool|str log: initial value: False -
-        log connection/handshake details? If set to True,
-        pysftp creates a temporary file and logs to that.  If set to a valid
-        path and filename, pysftp logs to that.  The name of the logfile can
-        be found at  ``.logfile``
-    :ivar bool compression: initial value: False - Enables compression on the
-        transport, if set to True.
-    :ivar list|None ciphers: initial value: None -
-        List of ciphers to use in order.
-
-    '''
-    def __init__(self):
-        # self.ciphers = None
-        # self.compression = False
-        self.log = False
-        self.compression = False
-        self.ciphers = None
+        self.ulist.append(pathname)
 
 
 class Connection(object):
@@ -172,12 +105,13 @@ class Connection(object):
         The SSH port of the remote machine.
     :param str|None private_key_pass: *Default: None* -
         password to use, if private_key is encrypted.
-    :param list|None ciphers: *Deprecated* -
-        see ``pysftp.CnOpts`` and ``cnopts`` parameter
-    :param bool|str log: *Deprecated* -
-        see ``pysftp.CnOpts`` and ``cnopts`` parameter
-    :param None|CnOpts cnopts: *Default: None* - extra connection options
-        set in a CnOpts object.
+    :param list|None ciphers: *Default: None* -
+        List of ciphers to use in order.
+    :param bool|str log: *Default: False* -
+        log connection/handshake details? If set to True,
+        pysftp creates a temporary file and logs to that.  If set to a valid
+        path and filename, pysftp logs to that.  The name of the logfile can
+        be found at  ``.logfile``
     :returns: (obj) connection to the requested host
     :raises ConnectionException:
     :raises CredentialException:
@@ -196,34 +130,15 @@ class Connection(object):
                  private_key_pass=None,
                  ciphers=None,
                  log=False,
-                 cnopts=None
-                 ):
-        if cnopts is None:
-            self._cnopts = CnOpts()
-        else:
-            self._cnopts = cnopts
-
-        # TODO: remove this if block and log param above in v0.3.0
-        if log:
-            wmsg = "log parameter is deprecated and will be remove in 0.3.0. "\
-                   "Use cnopts param."
-            warnings.warn(wmsg, DeprecationWarning)
-            self._cnopts.log = log
-        # TODO: remove this if block and log param above in v0.3.0
-        if ciphers is not None:
-            wmsg = "ciphers parameter is deprecated and will be remove in "\
-                   "0.3.0. Use cnopts param."
-            warnings.warn(wmsg, DeprecationWarning)
-            self._cnopts.ciphers = ciphers
-
+                ):
         self._sftp_live = False
         self._sftp = None
         if not username:
             username = os.environ['LOGNAME']
 
-        self._logfile = self._cnopts.log
-        if self._cnopts.log:
-            if isinstance(self._cnopts.log, bool):
+        self._logfile = log
+        if log:
+            if isinstance(log, bool):
                 # Log to a temporary file.
                 fhnd, self._logfile = tempfile.mkstemp('.txt', 'ssh-')
                 os.close(fhnd)  # don't want os file descriptors open
@@ -234,16 +149,12 @@ class Connection(object):
         try:
             self._transport = paramiko.Transport((host, port))
             # Set security ciphers if set
-            if self._cnopts.ciphers is not None:
-                ciphers = self._cnopts.ciphers
+            if ciphers is not None:
                 self._transport.get_security_options().ciphers = ciphers
             self._transport_live = True
         except (AttributeError, socket.gaierror):
             # couldn't connect
             raise ConnectionException(host, port)
-
-        # Toggle compression
-        self._transport.use_compression(self._cnopts.compression)
 
         # Authenticate the transport. prefer password if given
         if password is not None:
@@ -258,15 +169,15 @@ class Connection(object):
                 elif os.path.exists(os.path.expanduser('~/.ssh/id_dsa')):
                     private_key = '~/.ssh/id_dsa'
                 else:
-                    raise CredentialException("You have not specified a "
+                    raise CredentialException("You have not specified a "\
                                               "password or key.")
             if not isinstance(private_key, AgentKey):
                 private_key_file = os.path.expanduser(private_key)
-                try:  # try rsa
+                try:  #try rsa
                     rsakey = paramiko.RSAKey
                     prv_key = rsakey.from_private_key_file(private_key_file,
                                                            private_key_pass)
-                except paramiko.SSHException:   # if it fails, try dss
+                except paramiko.SSHException:   #if it fails, try dss
                     dsskey = paramiko.DSSKey
                     prv_key = dsskey.from_private_key_file(private_key_file,
                                                            private_key_pass)
@@ -313,14 +224,15 @@ class Connection(object):
 
         """
         if not localpath:
-            print('Local mPath not found')
             localpath = os.path.split(remotepath)[1]
 
         self._sftp_connect()
         if preserve_mtime:
             sftpattrs = self._sftp.stat(remotepath)
-
-        self._sftp.get(remotepath, localpath, callback=callback)
+        try:
+            self._sftp.get(remotepath, localpath, callback=callback)
+        except IOError, e: 
+            print(e)
         if preserve_mtime:
             os.utime(localpath, (sftpattrs.st_atime, sftpattrs.st_mtime))
 
@@ -359,46 +271,39 @@ class Connection(object):
         """
         self._sftp_connect()
         wtcb = WTCallbacks()
-        self.walktree(remotedir, wtcb.file_cb, wtcb.dir_cb, wtcb.unk_cb)
-        
-        #make sure the local direcory exists, if not create it
-        rpath = localdir.split('/')
-        cur_local_dir = os.getcwd()
-        for i in range(len(rpath)):
-            if not os.path.exists(rpath[i]):
-                os.mkdir(rpath[i])
-            os.chdir(rpath[i])
-        os.chdir(cur_local_dir)
+        try:
+            self.walktree(remotedir, wtcb.file_cb, wtcb.dir_cb, wtcb.unk_cb)
+        except Exception, e:
+            
+            print(e)
+            return
         # handle directories we recursed through
         for dname in wtcb.dlist:
             for subdir in path_advance(dname):
                 try:
                     os.mkdir(reparent(localdir, subdir))
-                    # force result to a list for setter,
-                    wtcb.dlist = wtcb.dlist + [subdir, ]
+                    wtcb.dlist.append(subdir)
                 except OSError:     # dir exists
                     pass
 
         for fname in wtcb.flist:
             # they may have told us to start down farther, so we may not have
             # recursed through some, ensure local dir structure matches
-            '''
             head, _ = os.path.split(fname)
             if head not in wtcb.dlist:
                 for subdir in path_advance(head):
                     if subdir not in wtcb.dlist and subdir != '.':
                         try:
                             os.mkdir(reparent(localdir, subdir))
-                            wtcb.dlist = wtcb.dlist + [subdir, ]
-                        except:
+                            wtcb.dlist.append(subdir)
+                        except: #dir exists
                             pass
-            '''
 
-            print(reparent(localdir,fname[len(remotedir)+1:]))
-            
             self.get(fname,
                      reparent(localdir, fname),
-                     preserve_mtime=preserve_mtime)
+                     preserve_mtime=preserve_mtime
+                    )
+
 
     def getfo(self, remotepath, flo, callback=None):
         """Copy a remote file (remotepath) to a file-like object, flo.
@@ -426,7 +331,7 @@ class Connection(object):
             the remote path, else the remote :attr:`.pwd` and filename is used.
         :param callable callback:
             optional callback function (form: ``func(int, int``)) that accepts
-            the bytes transferred so far and the total bytes to be transferred.
+            the bytes transferred so far and the total bytes to be transferred..
         :param bool confirm:
             whether to do a stat() on the file afterwards to confirm the file
             size
@@ -518,16 +423,8 @@ class Connection(object):
         walktree('.', wtcb.file_cb, wtcb.dir_cb, wtcb.unk_cb)
         # restore local directory
         os.chdir(cur_local_dir)
-        #check if remote directory exists if not create it
-        rpath = remotepath.split('/')
-        cur_remote_dir = self.pwd
-        for i in range(len(rpath)):
-            if not self.exists(rpath[i]):
-                self.mkdir(rpath[i])
-            self.chdir(rpath[i])
-        self.chdir(cur_remote_dir)
-            
         for dname in wtcb.dlist:
+            #for subdir in path_advance(dname):
             if dname != '.':
                 try:
                     self.mkdir(reparent(remotepath, dname))
@@ -539,14 +436,18 @@ class Connection(object):
             if head not in wtcb.dlist:
                 for subdir in path_advance(head):
                     if subdir not in wtcb.dlist and subdir != '.':
-                        self.mkdir(reparent(remotepath, subdir))
-                        wtcb.dlist = wtcb.dlist + [subdir, ]
+                        try:
+                            self.mkdir(reparent(remotepath, subdir))
+                            wtcb.dlist.append(subdir)
+                        except: #dir exists
+                            pass
+                        
             src = os.path.join(localpath, fname)
             dest = reparent(remotepath, fname)
             # print('put', src, dest)
-            print(dest)
-            
             self.put(src, dest, confirm=confirm, preserve_mtime=preserve_mtime)
+
+
 
     def putfo(self, flo, remotepath=None, file_size=0, callback=None,
               confirm=True):
@@ -560,7 +461,7 @@ class Connection(object):
             callback function will always be 0.
         :param callable callback:
             optional callback function (form: ``func(int, int``)) that accepts
-            the bytes transferred so far and the total bytes to be transferred.
+            the bytes transferred so far and the total bytes to be transferred..
         :param bool confirm:
             whether to do a stat() on the file afterwards to confirm the file
             size
@@ -645,8 +546,8 @@ class Connection(object):
 
     def chown(self, remotepath, uid=None, gid=None):
         """ set uid and/or gid on a remotepath, you may specify either or both.
-        Unless you have **permission** to do this on the remote server, you
-        will raise an IOError: 13 - permission denied
+        Unless you have **permission** to do this on the remote server, you will
+        raise an IOError: 13 - permission denied
 
         :param str remotepath: the remote path/file to modify
         :param int uid: the user id to set on the remotepath
@@ -654,8 +555,7 @@ class Connection(object):
 
         :returns: None
 
-        :raises:
-            IOError, if you don't have permission or the file doesn't exist
+        :raises: IOError, if you don't have permission or the file doesn't exist
 
         """
         self._sftp_connect()
@@ -672,8 +572,7 @@ class Connection(object):
 
     def getcwd(self):
         """return the current working directory on the remote. This is a wrapper
-        for paramiko's method and not to be confused with the SFTP command,
-        cwd.
+        for paramiko's method and not to be confused with the SFTP command, cwd.
 
         :returns: (str) the current remote path. None, if not set.
 
@@ -792,7 +691,7 @@ class Connection(object):
             pass
 
         elif self.isfile(remotedir):
-            raise OSError("a file with the same name as the remotedir, "
+            raise OSError("a file with the same name as the remotedir, " \
                           "'%s', already exists." % remotedir)
         else:
 
@@ -890,20 +789,11 @@ class Connection(object):
         if self._transport_live:
             self._transport.close()
             self._transport_live = False
-        # clean up any loggers
-        if self._cnopts.log:
-            # if handlers are active they hang around until the app exits
-            # this closes and removes the handlers if in use at close
-            import logging
-            lgr = logging.getLogger("paramiko")
-            if lgr:
-                lgr.handlers = []
 
     def open(self, remote_file, mode='r', bufsize=-1):
         """Open a file on the remote server.
 
-        See http://paramiko-docs.readthedocs.org/en/latest/api/sftp.html for
-        details.
+        See http://paramiko-docs.readthedocs.org/en/latest/api/sftp.html?highlight=open#paramiko.sftp_client.SFTPClient.open for details.
 
         :param str remote_file: name of the file to open.
         :param str mode:
@@ -982,8 +872,7 @@ class Connection(object):
         self._sftp.truncate(remotepath, size)
         return self._sftp.stat(remotepath).st_size
 
-    def walktree(self, remotepath, fcallback, dcallback, ucallback,
-                 recurse=True):
+    def walktree(self, remotepath, fcallback, dcallback, ucallback, recurse=True):
         '''recursively descend, depth first, the directory tree rooted at
         remotepath, calling discreet callback functions for each regular file,
         directory and unknown file type.
@@ -1007,8 +896,8 @@ class Connection(object):
 
         '''
         self._sftp_connect()
-        for entry in self.listdir(remotepath):
-            pathname = posixpath.join(remotepath, entry)
+        for entry in self._sftp.listdir(remotepath):
+            pathname = os.path.join(remotepath, entry)
             mode = self._sftp.stat(pathname).st_mode
             if S_ISDIR(mode):
                 # It's a directory, call the dcallback function
@@ -1027,7 +916,7 @@ class Connection(object):
     def sftp_client(self):
         """give access to the underlying, connected paramiko SFTPClient object
 
-        see http://paramiko-docs.readthedocs.org/en/latest/api/sftp.html
+        see http://paramiko-docs.readthedocs.org/en/latest/api/sftp.html?highlight=sftpclient
 
         :params: None
 
@@ -1042,24 +931,10 @@ class Connection(object):
         """Get tuple of currently used local and remote ciphers.
 
         :returns:
-            (tuple of  str) currently used ciphers (local_cipher,
-            remote_cipher)
+            (tuple of  str) currently used ciphers (local_cipher, remote_cipher)
 
         """
         return self._transport.local_cipher, self._transport.remote_cipher
-
-    @property
-    def active_compression(self):
-        """Get tuple of currently used local and remote compression.
-
-        :returns:
-            (tuple of  str) currently used compression (local_compression,
-            remote_compression)
-
-        """
-        localc = self._transport.local_compression
-        remotec = self._transport.remote_compression
-        return localc, remotec
 
     @property
     def security_options(self):
@@ -1067,8 +942,8 @@ class Connection(object):
 
         :returns:
             (obj) security preferences of the ssh transport. These are tuples
-            of acceptable `.ciphers`, `.digests`, `.key_types`, and key
-            exchange algorithms `.kex`, listed in order of preference.
+            of acceptable `.ciphers`, `.digests`, `.key_types`, and key exchange
+            algorithms `.kex`, listed in order of preference.
 
         """
 
@@ -1160,7 +1035,6 @@ def path_retreat(thepath, sep=os.sep):
             yield '%s%s' % (pre, os.path.join(*parts))
         parts = parts[:-1]
 
-
 def reparent(newparent, oldpath):
     '''when copying or moving a directory structure, you need to re-parent the
     oldpath.  When using os.path.join to calculate this new path, the
@@ -1174,7 +1048,7 @@ def reparent(newparent, oldpath):
     :returns: (str) resulting adoptive path
     '''
 
-    if oldpath[0] in (posixpath.sep, ntpath.sep):
+    if oldpath[0] == os.sep:
         oldpath = '.' + oldpath
     return os.path.join(newparent, oldpath)
 
@@ -1218,7 +1092,6 @@ def walktree(localpath, fcallback, dcallback, ucallback, recurse=True):
         else:
             # Unknown file type
             ucallback(pathname)
-
 
 @contextmanager
 def cd(localpath=None):

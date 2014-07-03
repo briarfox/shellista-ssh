@@ -7,6 +7,7 @@ import ui
 import modules.Keys as Keys
 import traceback
 import StringIO
+import modules.shortcuts as shortcuts
 from tempfile import TemporaryFile
 #import modules.patchparamiko
 from modules.edit import edit_file
@@ -29,6 +30,8 @@ class SSH(cmd.Cmd):
         cmd.Cmd.__init__(self)
         self.sshlista_path = os.path.dirname(os.path.realpath(__file__))
         self.connected = False
+        self.local_home = os.path.expanduser('~/Documents')
+        self.remote_home = ''
         self.os_sign = {'WINDOWS': ' & ','LINUX': ' ; '}
         self.user = ''
         self.host = ''
@@ -42,9 +45,18 @@ class SSH(cmd.Cmd):
 ########cmd module overrides#######
     def emptyline(self):
         return
+        
+    def _parse_home(self,line):
+        if '$LOCAL' in line:
+            line = line.replace('$LOCAL',self.local_home)
+        if '$REMOTE' in line:
+            line = line.replace('$REMOTE',self.remote_home)
+        return line
  
 #catch help cmd when used in ssh       
     def precmd(self,line):
+        line = shortcuts.parse_shortcuts(line)
+        line = self._parse_home(line)
         args = line.split(' ')
         if args[0] == 'help':
             if self.connected:
@@ -72,6 +84,20 @@ class SSH(cmd.Cmd):
             print '***Invalid Command***'
             
 ######################################
+
+#Edit shortcuts
+    def do_shortcut(self,line):
+        '''
+Creates shortcuts that can be used to store commands and paths
+To use a shortcut call $your_shortcut
+    usage:
+shortcut list|edit
+        '''
+        if line=='edit':
+            shortcuts.edit_shortcuts()
+        if line=='list':
+            shortcuts.list_shortcuts()
+        return
 
 
 #handle editing from remote
@@ -135,64 +161,68 @@ class SSH(cmd.Cmd):
         scp copy_from copy_to
         
         host: designates remote location
-        $Home - when used in local path, directory will be from pythonista Documents instead of local path
+        $LOCAL Designates pythonista Documents directory.
+        $REMOTE Designates host user directory
         
             usage:
                 scp host:projects/folder local/project
-                scp $HOME/projects/folder host:remote/dir
-                scp local/project/test.py host:remote/project/test.py
+                scp $LOCAL/projects/folder host:remote/dir
+                scp local/project/test.py host:$REMOTE/remote/project/test.py
         '''
-        args = line.split(' ')
-        if args[0]=='' or len(args) >2:
-            return
-        mode = ''
-        if 'host:' in args[0]:
-            args[0] = args[0][5:]
-            mode = 'GET'
-        elif 'host:' in args[1]:
-            args[1] = args[1][5:]
-            mode = 'PUT'
-        else:
-            print '*Invalid Usage*'
-            return
+        if self.connected:
+            args = line.split(' ')
+            if args[0]=='' or len(args) >2:
+                return
+            mode = ''
+            if 'host:' in args[0]:
+                args[0] = args[0][5:]
+                mode = 'GET'
+            elif 'host:' in args[1]:
+                args[1] = args[1][5:]
+                mode = 'PUT'
+            else:
+                print '*Invalid Usage*'
+                return
             
-        if mode == 'GET':
-            if self.client.isdir(args[0]):
-                #check for $HOME
-                cur_dir = os.getcwd()
-                if '$HOME' in args[1]:
-                    os.chdir(os.path.expanduser('~/Documents'))
-                    args[1] = args[1][6:]
-                path = args[0].split('/')
-                dir = path[len(path)-1]
-                self.client.chdir(args[0])
-                self.client.get_r('.',args[1])
-                os.chdir(cur_dir)
+            #get current directories
+            cur_local = os.getcwd()
+            cur_remote = self.client.pwd
+            if mode == 'GET':
+                if self.client.isdir(args[0]):
+                    self.client.chdir(args[0])
+                    os.chdir(args[1])
+                    self.client.get_r('.','.')
+                else:
+                    remote_base,remote_head = os.path.split(args[0])
+                    local_base,local_head = os.path.split(args[1])
+    
+                    if local_base!='':
+                        os.chdir(local_base)
+                    if remote_base!='':
+                        self.client.chdir(remote_base)
+                    self.client.get(remote_head,local_head)
+            elif mode == 'PUT':
+                if os.path.isdir(args[0]):
+                    self.client.chdir(args[1])
+                    os.chdir(args[0])
+                    self.client.put_r('.','.')
+                else:
+                    remote_base,remote_head = os.path.split(args[1])
+                    local_base,local_head = os.path.split(args[0])
+                    if local_base!='':
+                        os.chdir(local_base)
+                    if remote_base!='':
+                        self.client.chdir(remote_base)
+                    self.client.put(local_head,remote_head)
             else:
-                if '$HOME' in args[1]:
-                    cur_dir = os.getcwd()
-                    os.chdir(os.path.expanduser('~/Documents'))
-                    args[1] = args[1][6:]
-                self.client.get(args[0],args[1])
-                os.chdir(cur_dir)
-        elif mode == 'PUT':
-            cur_dir = os.getcwd()
-            if '$HOME' in args[0]:
-                    cur_dir = os.getcwd()
-                    os.chdir(os.path.expanduser('~/Documents'))
-                    args[0] = args[0][6:]
-            if os.path.isdir(args[0]):
-                try:
-                    import traceback
-                    self.client.put_r(args[0],args[1])
-                    os.chdir(cur_dir)
-                except:
-                    print traceback.format_exc()
-            else:
-                self.client.put(args[0],args[1])
-                os.chdir(cur_dir)
+                print sys.modules[__name__].__doc__
+                
+            #reset to current directories
+            os.chdir(cur_local)
+            self.client.chdir(cur_remote)
         else:
-            print sys.modules[__name__].__doc__
+            print 'You must be connected to use this command.'
+            return
     
     
     
@@ -247,6 +277,8 @@ usage:
                 except Exception, e:
                     print e
                     return
+        #get home directory for remote
+        self.remote_home = self.client.pwd
                     
         #get os 
         self.do_cd(' .')

@@ -15,6 +15,8 @@ shellista = sys.modules['__main__']
 shellista_dir = os.path.abspath(os.path.dirname(shellista.__file__))
 TEMP_DIR = os.path.join(shellista_dir,'plugins','extensions','ssh','modules')
 
+TEMP_DIR = os.path.abspath(os.path.dirname(__file__))
+
 
 
 def edit_file(file_to_edit):
