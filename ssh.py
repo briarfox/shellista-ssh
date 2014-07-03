@@ -255,7 +255,7 @@ usage:
             return
         
         pkey = DIR+'/'+KEY+'.txt'
-
+        print 'connecting to host...'
         try:
             self.client = pysftp.Connection(self.host,username=self.user,private_key=pkey)
             print 'Key authenticated. Connected as %s on %s' % (self.user,self.host)
