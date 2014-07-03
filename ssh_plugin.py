@@ -8,5 +8,6 @@ alias=[]
 
 def main(self,line):
     ssh.SSH().cmdloop()
+    return
     
 
