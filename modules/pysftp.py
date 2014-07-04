@@ -298,7 +298,7 @@ class Connection(object):
                             wtcb.dlist.append(subdir)
                         except: #dir exists
                             pass
-
+            print(fname)
             self.get(fname,
                      reparent(localdir, fname),
                      preserve_mtime=preserve_mtime
@@ -445,6 +445,7 @@ class Connection(object):
             src = os.path.join(localpath, fname)
             dest = reparent(remotepath, fname)
             # print('put', src, dest)
+            print(dest)
             self.put(src, dest, confirm=confirm, preserve_mtime=preserve_mtime)
 
 
