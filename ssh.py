@@ -20,6 +20,21 @@ key_mode = {'RSA': 'rsa',
 def _parse_host(host):
     result = re.match(r'(.*)@(.*)',host)
     return result.group(1),result.group(2)
+    
+#parse ignore list for scp
+def parse_ignore(args):
+    tmp_list = []
+    ignore_list=[]
+    ignore_found = False
+    for arg in args:
+        if arg=='-i' or arg=='--ignore':
+            ignore_found = True
+        elif ignore_found==False:
+            tmp_list.append(arg)
+        else:
+            ignore_list.append(arg)
+    tmp_list.append(ignore_list)
+    return tmp_list
 
 class SSH(cmd.Cmd):
     "SSH class for sshlista"
@@ -76,8 +91,9 @@ class SSH(cmd.Cmd):
                 path = self.client.pwd
         
             result = self.client.execute('cd '+path+self.os_sign[self.operating_system] +line)
-            for line in result:
-                print line
+            if result:
+                for line in result:
+                    print line,
         else:
             print '***Invalid Command***'
             
@@ -96,6 +112,10 @@ shortcut list|edit
         if line=='list':
             shortcuts.list_shortcuts()
         return
+    
+    def do_alias(self,line):
+        '''see shortcuts'''
+        self.do_shortcut(line)
 
 
 #handle editing from remote
@@ -124,6 +144,8 @@ shortcut list|edit
             
         else:
             return
+            
+            
     def do_nano(self,line):
         '''
         nano:
@@ -132,6 +154,7 @@ shortcut list|edit
                 edit path/on/remote  
         '''
         self.do_edit(line)
+            
             
     def do_editkey(self,line):
         '''
@@ -153,23 +176,33 @@ shortcut list|edit
         else:
             return
         
+
+    
+        
     def do_scp(self,line):
         '''
         scp - secure copy
-        scp copy_from copy_to
+        scp copy_from copy_to [-i|--ignore] 
         
         host: designates remote location
         $LOCAL Designates pythonista Documents directory.
         $REMOTE Designates host user directory
+        [-i|--ignore] - will ignore folder and files that follow the -i tag
         
             usage:
-                scp host:projects/folder local/project
+                scp host:projects/folder local/project -i .git
                 scp $LOCAL/projects/folder host:remote/dir
                 scp local/project/test.py host:$REMOTE/remote/project/test.py
         '''
+        
+            
         if self.connected:
-            args = line.split(' ')
-            if args[0]=='' or len(args) >2:
+            #callback for scp
+            def _callback(copy_from,copy_to):
+                print copy_to
+                
+            args = parse_ignore(line.split(' '))
+            if args[0]=='' or len(args) >3:
                 return
             mode = ''
             if 'host:' in args[0]:
@@ -189,7 +222,7 @@ shortcut list|edit
                 if self.client.isdir(args[0]):
                     self.client.chdir(args[0])
                     os.chdir(args[1])
-                    self.client.get_r('.','.')
+                    self.client.get_r('.','.',ignore=args[2],callback=_callback)
                 else:
                     remote_base,remote_head = os.path.split(args[0])
                     local_base,local_head = os.path.split(args[1])
@@ -203,7 +236,7 @@ shortcut list|edit
                 if os.path.isdir(args[0]):
                     self.client.chdir(args[1])
                     os.chdir(args[0])
-                    self.client.put_r('.','.')
+                    self.client.put_r('.','.',ignore=args[2],callback=_callback)
                 else:
                     remote_base,remote_head = os.path.split(args[1])
                     local_base,local_head = os.path.split(args[0])
@@ -300,7 +333,6 @@ usage:
         try:
             #print self.client.pwd()
             result = self.client.chdir(args[0])
-            print result
         except :
             print 'Path does not exist.'
         return

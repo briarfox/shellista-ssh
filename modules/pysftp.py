@@ -256,12 +256,14 @@ class Connection(object):
                     self.get(rname, reparent(localdir, rname),
                              preserve_mtime=preserve_mtime)
 
-    def get_r(self, remotedir, localdir, preserve_mtime=False):
+    def get_r(self, remotedir, localdir, preserve_mtime=False,ignore=[],callback=None):
         """recursively copy remotedir structure to localdir
 
         :param str remotedir: the remote directory to copy from
         :param str localdir: the local directory to copy to
         :param bool preserve_mtime: *Default: False* -
+        :param list ignore: list of folders/files to ignore
+        :param func callback: callback that is passed(from_dir,to_dir)
             preserve modification time on files
 
         :returns: None
@@ -272,7 +274,7 @@ class Connection(object):
         self._sftp_connect()
         wtcb = WTCallbacks()
         try:
-            self.walktree(remotedir, wtcb.file_cb, wtcb.dir_cb, wtcb.unk_cb)
+            self.walktree(remotedir, wtcb.file_cb, wtcb.dir_cb, wtcb.unk_cb,ignore=ignore)
         except Exception, e:
             
             print(e)
@@ -298,7 +300,8 @@ class Connection(object):
                             wtcb.dlist.append(subdir)
                         except: #dir exists
                             pass
-            print(fname)
+            if callback:
+                callback(fname,reparent(localdir,fname))
             self.get(fname,
                      reparent(localdir, fname),
                      preserve_mtime=preserve_mtime
@@ -397,7 +400,7 @@ class Connection(object):
         # restore local directory
         os.chdir(cur_local_dir)
 
-    def put_r(self, localpath, remotepath, confirm=True, preserve_mtime=False):
+    def put_r(self, localpath, remotepath, confirm=True, preserve_mtime=False,ignore=[],callback=None):
         """Recursively copies a local directory's contents to a remotepath
 
         :param str localpath: the local path to copy (source)
@@ -420,7 +423,7 @@ class Connection(object):
         wtcb = WTCallbacks()
         cur_local_dir = os.getcwd()
         os.chdir(localpath)
-        walktree('.', wtcb.file_cb, wtcb.dir_cb, wtcb.unk_cb)
+        walktree('.', wtcb.file_cb, wtcb.dir_cb, wtcb.unk_cb,ignore=ignore)
         # restore local directory
         os.chdir(cur_local_dir)
         for dname in wtcb.dlist:
@@ -444,8 +447,8 @@ class Connection(object):
                         
             src = os.path.join(localpath, fname)
             dest = reparent(remotepath, fname)
-            # print('put', src, dest)
-            print(dest)
+            if callback:
+                callback(src,dest)
             self.put(src, dest, confirm=confirm, preserve_mtime=preserve_mtime)
 
 
@@ -873,7 +876,7 @@ class Connection(object):
         self._sftp.truncate(remotepath, size)
         return self._sftp.stat(remotepath).st_size
 
-    def walktree(self, remotepath, fcallback, dcallback, ucallback, recurse=True):
+    def walktree(self, remotepath, fcallback, dcallback, ucallback, recurse=True,ignore=[]):
         '''recursively descend, depth first, the directory tree rooted at
         remotepath, calling discreet callback functions for each regular file,
         directory and unknown file type.
@@ -898,20 +901,21 @@ class Connection(object):
         '''
         self._sftp_connect()
         for entry in self._sftp.listdir(remotepath):
-            pathname = os.path.join(remotepath, entry)
-            mode = self._sftp.stat(pathname).st_mode
-            if S_ISDIR(mode):
-                # It's a directory, call the dcallback function
-                dcallback(pathname)
-                if recurse:
-                    # now, recurse into it
-                    self.walktree(pathname, fcallback, dcallback, ucallback)
-            elif S_ISREG(mode):
-                # It's a file, call the fcallback function
-                fcallback(pathname)
-            else:
-                # Unknown file type
-                ucallback(pathname)
+            if entry not in ignore:
+                pathname = os.path.join(remotepath, entry)
+                mode = self._sftp.stat(pathname).st_mode
+                if S_ISDIR(mode):
+                    # It's a directory, call the dcallback function
+                    dcallback(pathname)
+                    if recurse:
+                        # now, recurse into it
+                        self.walktree(pathname, fcallback, dcallback, ucallback,ignore=ignore)
+                elif S_ISREG(mode):
+                    # It's a file, call the fcallback function
+                    fcallback(pathname)
+                else:
+                    # Unknown file type
+                    ucallback(pathname)
 
     @property
     def sftp_client(self):
@@ -1054,7 +1058,7 @@ def reparent(newparent, oldpath):
     return os.path.join(newparent, oldpath)
 
 
-def walktree(localpath, fcallback, dcallback, ucallback, recurse=True):
+def walktree(localpath, fcallback, dcallback, ucallback, recurse=True,ignore=[]):
     '''on the local file system, recursively descend, depth first, the
     directory tree rooted at localpath, calling discreet callback functions
     for each regular file, directory and unknown file type.
@@ -1079,20 +1083,21 @@ def walktree(localpath, fcallback, dcallback, ucallback, recurse=True):
     '''
 
     for entry in os.listdir(localpath):
-        pathname = os.path.join(localpath, entry)
-        mode = os.stat(pathname).st_mode
-        if S_ISDIR(mode):
-            # It's a directory, call the dcallback function
-            dcallback(pathname)
-            if recurse:
-                # now, recurse into it
-                walktree(pathname, fcallback, dcallback, ucallback)
-        elif S_ISREG(mode):
-            # It's a file, call the fcallback function
-            fcallback(pathname)
-        else:
-            # Unknown file type
-            ucallback(pathname)
+        if entry not in ignore:
+            pathname = os.path.join(localpath, entry)
+            mode = os.stat(pathname).st_mode
+            if S_ISDIR(mode):
+                # It's a directory, call the dcallback function
+                dcallback(pathname)
+                if recurse:
+                    # now, recurse into it
+                    walktree(pathname, fcallback, dcallback, ucallback,ignore=ignore)
+            elif S_ISREG(mode):
+                # It's a file, call the fcallback function
+                fcallback(pathname)
+            else:
+                # Unknown file type
+                ucallback(pathname)
 
 @contextmanager
 def cd(localpath=None):
