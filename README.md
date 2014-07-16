@@ -1,3 +1,3 @@
 #shellista-ssh
 
-ssh modules for pythonista's shellista
+ssh module for pythonista's shellista
