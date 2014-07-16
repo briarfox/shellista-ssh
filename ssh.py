@@ -3,6 +3,7 @@ import cmd
 import getpass
 import os
 import sys
+from modules.docopt import docopt,DocoptExit
 import modules.Keys as Keys
 import StringIO
 import modules.shortcuts as shortcuts
@@ -16,11 +17,44 @@ DIR = os.path.expanduser('~/Documents/.ssh')
 KEY = 'id_ssh_key'
 key_mode = {'RSA': 'rsa',
             'DSA': 'dss'}
+            
+#decorator for args
+def docopt_arg(func):
+    '''          
+    This decorator is used to simplify the try/except block and pass the result
+    of the docopt parsing to the called action.
+    '''
+    def fn(self, arg):
+        try:
+            opt = docopt(fn.__doc__, arg)
+
+        except DocoptExit as e:
+            # The DocoptExit is thrown when the args do not match.
+            # We print a message to the user and the usage block.
+
+            print('Invalid Command!')
+            print(e)
+            return
+
+        except SystemExit:
+            # The SystemExit exception prints the usage for --help
+            # We do not need to do the print here.
+
+            return
+
+        return func(self, opt)
+
+    fn.__name__ = func.__name__
+    fn.__doc__ = func.__doc__
+    fn.__dict__.update(func.__dict__)
+    return fn
+
 
 def _parse_host(host):
     result = re.match(r'(.*)@(.*)',host)
     return result.group(1),result.group(2)
-    
+
+'''    
 #parse ignore list for scp
 def parse_ignore(args):
     tmp_list = []
@@ -35,6 +69,8 @@ def parse_ignore(args):
             ignore_list.append(arg)
     tmp_list.append(ignore_list)
     return tmp_list
+'''
+
 
 class SSH(cmd.Cmd):
     "SSH class for sshlista"
@@ -100,132 +136,124 @@ class SSH(cmd.Cmd):
 ######################################
 
 #Edit shortcuts
+    @docopt_arg
     def do_shortcut(self,line):
         '''
 Creates shortcuts that can be used to store commands and paths
 To use a shortcut call $your_shortcut
-    usage:
-shortcut list|edit
+
+    Usage: shortcut (list|edit)
         '''
-        if line=='edit':
+        if line['edit']:
             shortcuts.edit_shortcuts()
         if line=='list':
             shortcuts.list_shortcuts()
         return
     
     def do_alias(self,line):
-        '''see shortcuts'''
+        '''see shortcut'''
         self.do_shortcut(line)
 
 
 #handle editing from remote
+    @docopt_arg
     def do_edit(self, line):
         '''
-        edit:
-            Opens a remote file in pythonista's editor. When the console is reopened, save confimation will be requested.
-            usage:
-                edit path/on/remote
+Opens a remote file in pythonista's editor. When the console is reopened, save confimation will be requested.
+            
+Usage: edit <path>
+        
         '''
         if self.connected:
             try:
-                args = line.split(' ')
-                if len(args) > 1:
-                    return
                 buff = TemporaryFile()
-                self.client.getfo(args[0], buff)
+                self.client.getfo(line['<path>'], buff)
                 buff.seek(0)
                 result = edit_file(buff)
                 if result:
-                    self.client.putfo(result,args[0])
+                    self.client.putfo(result,line['<path>'])
             except:
                 print 'No file found at given path'
                 return
-            
-            
         else:
             return
             
             
     def do_nano(self,line):
         '''
-        nano:
-            Opens a remote file in pythonista's editor. When the console is reopened, save confimation will be requested.
-            usage:
-                edit path/on/remote  
+See edit
+        
         '''
         self.do_edit(line)
             
-            
+    @docopt_arg        
     def do_editkey(self,line):
         '''
-        editkey - Opens up the ssh key in the editor.
-            usage:
-                editkey [public/private]
+Opens up the ssh key in the editor.
+        
+Usage: editkey (public|private)
         '''
-        args = line.split(' ')
-        if len(args) >1:
-            return
-        if args[0] == 'public':
+        if line['public']:
             result = edit_file(open(DIR+'/id_ssh_key.pub.txt','r'))
             if result:
                 open(DIR+'id_ssh_key.pub.txt','w').write(result.read())
-        elif args[0] == 'private':
+        if line['private']:
             result = edit_file(open(DIR+'/id_ssh_key.txt','r'))
             if result:
                 open(DIR+'id_ssh_key.txt','w').write(result.read())
-        else:
-            return
-        
-
     
-        
+    @docopt_arg    
     def do_scp(self,line):
         '''
         scp - secure copy
-        scp copy_from copy_to [-i|--ignore] 
         
         host: designates remote location
         $LOCAL Designates pythonista Documents directory.
         $REMOTE Designates host user directory
-        [-i|--ignore] - will ignore folder and files that follow the -i tag
+        Example:
+            scp $LOCAL/projects/folder host:remote/dir
+            scp local/project/test.py host:$REMOTE/remote/project/test.py
         
-            usage:
-                scp host:projects/folder local/project -i .git
-                scp $LOCAL/projects/folder host:remote/dir
-                scp local/project/test.py host:$REMOTE/remote/project/test.py
+        Usage:
+            scp <copy_from> <copy_to> [--ignore <files>...]
+            
+            
+        Options:
+            -i, --ignore        Flag to ignore files/folders. Used without following <files> will default to .git, .svn     
         '''
         
             
         if self.connected:
             #callback for scp
+            _ignore = []
+            if line['--ignore']:
+                if line['<files>']:
+                    _ignore = line['<files>']
+                else:
+                    _ignore = ['.git','.svn']
+                
             def _callback(copy_from,copy_to):
                 print copy_to
                 
-            args = parse_ignore(line.split(' '))
-            if args[0]=='' or len(args) >3:
-                return
             mode = ''
-            if 'host:' in args[0]:
-                args[0] = args[0][5:]
+            if 'host:' in line['<copy_from>']:
+                line['<copy_from>'] = line["<copy_from>"][5:]
                 mode = 'GET'
-            elif 'host:' in args[1]:
-                args[1] = args[1][5:]
+            if 'host:' in line['<copy_to>']:
+                line['<copy_to>'] = line["<copy_to>"][5:]
                 mode = 'PUT'
-            else:
-                print '*Invalid Usage*'
-                return
             
             #get current directories
             cur_local = os.getcwd()
             cur_remote = self.client.pwd
             if mode == 'GET':
-                if self.client.isdir(args[0]):
-                    self.client.chdir(args[0])
-                    os.chdir(args[1])
-                    self.client.get_r('.','.',ignore=args[2],callback=_callback)
+                if self.client.isdir(line['<copy_from>']):
+                    self.client.chdir(line['<copy_from>'])
+                    os.chdir(line['<copy_to>'])
+                    self.client.get_r('.','.',ignore=_ignore,callback=_callback)
                 else:
-                    remote_base,remote_head = os.path.split(args[0])
-                    local_base,local_head = os.path.split(args[1])
+                    remote_base,remote_head = os.path.split(line['<copy_from>'])
+                    local_base,local_head = os.path.split(line['<copy_to>'])
     
                     if local_base!='':
                         os.chdir(local_base)
@@ -233,13 +261,13 @@ shortcut list|edit
                         self.client.chdir(remote_base)
                     self.client.get(remote_head,local_head)
             elif mode == 'PUT':
-                if os.path.isdir(args[0]):
-                    self.client.chdir(args[1])
-                    os.chdir(args[0])
-                    self.client.put_r('.','.',ignore=args[2],callback=_callback)
+                if os.path.isdir(line['<copy_from>']):
+                    self.client.chdir(line['<copy_to>'])
+                    os.chdir(line['<copy_from>'])
+                    self.client.put_r('.','.',ignore=_ignore,callback=_callback)
                 else:
-                    remote_base,remote_head = os.path.split(args[1])
-                    local_base,local_head = os.path.split(args[0])
+                    remote_base,remote_head = os.path.split(line['<copy_to>'])
+                    local_base,local_head = os.path.split(line['<copy_from>'])
                     if local_base!='':
                         os.chdir(local_base)
                     if remote_base!='':
@@ -260,48 +288,47 @@ shortcut list|edit
     
     
 #Connect to the ssh server
+    @docopt_arg
     def do_connect(self, line):
         '''
-connect:
-usage: 
-    connect shortcut
-    connect user@host
+Connect to ssh server
+Example:
+    connect $shortcut_name
+    connect user@host --port=8090
+
+Usage: 
+    connect <server> [--port=<port>]
+
+Options:
+    -p <port>, --port=<port>        Specify the port [default: 22]
 '''
-        args = line.split(' ')
-        if args[0] == '-P':
-            self.port = args[1]
-            args.pop(0) #pop -P
-            args.pop(0) #pop port number
-        
     #get username and host
-        if len(args)==1:
-            if '@' in args[0]:
-                self.user, self.host = _parse_host(args[0])
-                #args[0] = args[0].split(':')[1]
-            else:
-                print '**Invalid Usage**'
-                return
+        if '@' in line['<server>']:
+            self.user, self.host = _parse_host(line['<server>'])
         else:
-            print '*Invalid Usage*'
+            print '**Invalid Usage**'
             return
+            
+        _port = int(line['--port'])
+
         
         pkey = DIR+'/'+KEY+'.txt'
         print 'connecting to host...'
         try:
-            self.client = pysftp.Connection(self.host,username=self.user,private_key=pkey)
+            self.client = pysftp.Connection(self.host,port=_port,username=self.user,private_key=pkey)
             print 'Key authenticated. Connected as %s on %s' % (self.user,self.host)
             self.connected = True
             self.prompt = self.user+'@'+self.host+'>'
         except:
             try: 
                 self.passwd = getpass.getpass('password: ')
-                self.client = pysftp.Connection(self.host,username=self.user,private_key=pkey, private_key_pass=self.passwd)
+                self.client = pysftp.Connection(self.host,port=_port,username=self.user,private_key=pkey, private_key_pass=self.passwd)
                 print 'Key authenticated. Connected as %s on %s' % (self.user, self.host)
                 self.connected = True
                 self.prompt = self.user+'@'+self.host+'>'
             except Exception, e:
                 try:
-                    self.client = pysftp.Connection(self.host,username=self.user,password=self.passwd)
+                    self.client = pysftp.Connection(self.host,port=_port,username=self.user,password=self.passwd)
                     print 'Password Authenticated. Logged in as %s on %s' % (self.user, self.host)
                     self.connected = True
                     self.prompt = self.user+'@'+self.host+'>'
