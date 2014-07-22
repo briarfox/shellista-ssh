@@ -9,7 +9,7 @@ import editor
 
 #TEMP = os.path.abspath(os.path.split(sys.argv[0])[0])
 
-TEMP = os.path.relpath(os.path.realpath(os.path.dirname(__file__)),os.path.expanduser('~/Documents'))+'/tmp.txt'
+TEMP = os.path.relpath(os.path.realpath(os.path.dirname(__file__)),os.path.expanduser('~/Documents'))+'/.tmp.txt'
 
 shellista = sys.modules['__main__']
 shellista_dir = os.path.abspath(os.path.dirname(shellista.__file__))
@@ -25,7 +25,7 @@ def edit_file(file_to_edit):
     cur_path = editor.get_path()
     #with open('tmp.txt', 'w') as file:
     try:
-        file = open(TEMP_DIR+'/tmp.txt','w')
+        file = open(TEMP_DIR+'/.tmp.txt','w')
         file.write(file_to_edit.read())
         file.close()
         editor.reload_files()
@@ -36,15 +36,19 @@ def edit_file(file_to_edit):
             input = raw_input('Save Changes? Y,N: ')
             if input=='Y' or input=='y':
                 editor.open_file(cur_path)
-                return open(TEMP_DIR+'/tmp.txt','r')
+                return open(TEMP_DIR+'/.tmp.txt','r')
             elif input=='N' or input=='n':
                 editor.open_file(cur_path)
+                clear_file()
                 return False
 
         
     except Exception, e:
         print e
         return False
+        
+def clear_file():
+    os.remove(TEMP_DIR+'/.tmp.txt')
 
             
 

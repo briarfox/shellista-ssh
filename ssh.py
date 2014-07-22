@@ -9,7 +9,7 @@ import StringIO
 import modules.shortcuts as shortcuts
 from tempfile import TemporaryFile
 #import modules.patchparamiko
-from modules.edit import edit_file
+from modules.edit import edit_file,clear_file
 import re
 
 HOME = os.path.expanduser('~/Documents')
@@ -172,6 +172,7 @@ Usage: edit <path>
                 result = edit_file(buff)
                 if result:
                     self.client.putfo(result,line['<path>'])
+                    clear_file()
             except:
                 print 'No file found at given path'
                 return
